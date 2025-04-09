@@ -5,6 +5,7 @@ import psycopg2
 import requests
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
 # Initialize the GenAI client using your API key
 def init_genai_client():
@@ -19,18 +20,39 @@ def get_location_descriptions(title, text):
     client = init_genai_client()
 
     prompt = (
-        "Analyze this poem and identify any location(s) mentioned or implied in the poem or where you know the poem is about through other knowledge. "
-        "Return only the location(s), nothing else. "
-        "If no location(s) can be determined, return 'N/A'. "
-        "Example locations: 'Portland, OR, US', 'Columbia River, US', 'Sahara Desert, Africa'. "
-        "Return the result as a JSON array of strings."
-        "Title: {title} "
-        "Text: {text}"
+        "You are analyzing a poem to identify specific geographic locations. "
+        "Return a JSON array of strings, where each string is a location that is either explicitly mentioned, strongly implied, or clearly associated with the content of the poem. "
+        "You may use general world knowledge to infer settings from context, such as ecological or cultural clues (e.g., polar bears → Arctic).\n\n"
+
+        "The locations must be specific enough to geocode. For example:\n"
+        "- Valid: cities, states, regions, named rivers, mountains, parks, or landmarks.\n"
+        "- Not valid: country names or generic regions such as “the coast”, “the mountains”, “the tropics”, or “the countryside”.\n\n"
+
+        "If no valid location can be determined, return a JSON array containing a single string: 'N/A'.\n\n"
+
+        "Return **only** the JSON array—no explanation, comments, markdown, or additional text.\n\n"
+
+        "Example outputs:\n"
+        "['Portland, OR, US']\n"
+        "['Columbia River, US', 'Sahara Desert, Africa']\n"
+        "['N/A']\n\n"
+
+        f"Title: {title}\n"
+        f"Text: {text}"
     )
 
     response = client.models.generate_content(
         model='gemini-2.0-flash',
-        contents=prompt
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type='application/json',
+            response_schema={
+                'type': 'array',
+                'items': {
+                    'type': 'string'
+                }
+            },
+        )
     )
     print("Raw model response:\n", response.text)
     try:
@@ -48,9 +70,9 @@ def get_location_descriptions(title, text):
 # --- Google Geocoding API call ---
 def geocode_location(description):
     load_dotenv()
-    google_api_key = os.environ.get("GOOGLE_GEOCODING_API_KEY")
+    google_api_key = os.environ.get("GOOGLE_API_KEY")
     if not google_api_key:
-        raise Exception("GOOGLE_GEOCODING_API_KEY not set in environment.")
+        raise Exception("GOOGLE_API_KEY not set in environment.")
     endpoint = "https://maps.googleapis.com/maps/api/geocode/json"
     params = {
         "address": description,
@@ -81,11 +103,54 @@ def update_poem_with_locations(cur, poem_id, location_descriptions):
         if result:
             location_id = result[0]
         else:
+            if desc == "N/A":
+                cur.execute(
+                    """
+                    INSERT INTO locations (location_description)
+                    VALUES (%s)
+                    ON CONFLICT (location_description) DO NOTHING
+                    RETURNING id;
+                    """, (desc,)
+                )
+                row = cur.fetchone()
+                if row:
+                    location_id = row[0]
+                else:
+                    cur.execute("SELECT id FROM locations WHERE location_description = %s", (desc,))
+                    location_id = cur.fetchone()[0]
+                # Link the poem and location in the join table
+                cur.execute("""
+                    INSERT INTO poem_locations (poem_id, location_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT DO NOTHING;
+                """, (poem_id, location_id))
+                continue  # Skip geocoding
             try:
                 lat, lon = geocode_location(desc)
             except Exception as e:
                 print(f"Geocoding failed for '{desc}': {e}")
-                continue
+                # Insert without geometry if it doesn't already exist
+                cur.execute(
+                    """
+                    INSERT INTO locations (location_description)
+                    VALUES (%s)
+                    ON CONFLICT (location_description) DO NOTHING
+                    RETURNING id;
+                    """, (desc,)
+                )
+                row = cur.fetchone()
+                if row:
+                    location_id = row[0]
+                else:
+                    cur.execute("SELECT id FROM locations WHERE location_description = %s", (desc,))
+                    location_id = cur.fetchone()[0]
+                # Link the poem and location in the join table
+                cur.execute("""
+                    INSERT INTO poem_locations (poem_id, location_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT DO NOTHING;
+                """, (poem_id, location_id))
+                continue  # Move to next location
             cur.execute(
                 """
                 INSERT INTO locations (location_description, geom)
@@ -123,18 +188,20 @@ def main():
     conn = connect_db()
     cur = conn.cursor()
 
-    # Only process one poem from the database
-    poem_record = fetch_next_poem(cur)
-    if not poem_record:
-        print("No more poems to process.")
-    else:
+    while True:
+        poem_record = fetch_next_poem(cur)
+        if not poem_record:
+            print("No more poems to process.")
+            break
+
         poem_id, title, body = poem_record
-        print(f"Processing poem id {poem_id}: {title}")
+        print(f"\nProcessing poem id {poem_id}: {title}")
         try:
             location_descriptions = get_location_descriptions(title, body)
         except Exception as e:
             print(f"Error obtaining location info for poem {poem_id}: {e}")
             location_descriptions = []
+
         if location_descriptions:
             print(f"Found locations for poem {poem_id}: {location_descriptions}")
             update_poem_with_locations(cur, poem_id, location_descriptions)
