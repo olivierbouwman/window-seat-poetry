@@ -18,7 +18,14 @@
 <div id="results"></div>
 
 <script>
-    const supabase = supabase.createClient('https://ooqqdjvvdeqsbijygsvh.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vcXFkanZ2ZGVxc2Jpanlnc3ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxNTgyNDMsImV4cCI6MjA1OTczNDI0M30.LPvegZEkpE8vypKwPFiljoFOHKSMBUiT33xep8G_tMQ');
+    let supabase;
+
+    window.onload = () => {
+        supabase = window.supabase.createClient(
+            'https://ooqqdjvvdeqsbijygsvh.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vcXFkanZ2ZGVxc2Jpanlnc3ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxNTgyNDMsImV4cCI6MjA1OTczNDI0M30.LPvegZEkpE8vypKwPFiljoFOHKSMBUiT33xep8G_tMQ'
+        );
+    };
 
     async function findPoems() {
         const lat = parseFloat(document.getElementById('lat').value);
@@ -50,7 +57,7 @@
             div.innerHTML = `
           <h3>${poem.title}</h3>
           <p>${poem.body}</p>
-          <p><strong>Author:</strong> <a href="${poem.author_url}">${poem.author_title}</a></p>
+          <p><strong>Author:</strong> <a href="${poem.author_url}" target="_blank">${poem.author_title}</a></p>
           <p><strong>URL:</strong> <a href="${poem.url}">${poem.url}</a></p>
           <p><em>Distance: ${(poem.distance_m / 1000).toFixed(2)} km</em></p>
         `;
