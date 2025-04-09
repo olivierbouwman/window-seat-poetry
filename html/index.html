@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Poems Nearby</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 2rem; }
+        label, input { display: block; margin-bottom: 1rem; }
+        .poem { border-top: 1px solid #ccc; padding: 1rem 0; }
+    </style>
+</head>
+<body>
+<h1>Find Poems Near You</h1>
+<label>Latitude: <input id="lat" type="number" step="any" value="45.52"></label>
+<label>Longitude: <input id="lon" type="number" step="any" value="-122.68"></label>
+<label>Radius (km): <input id="radius" type="number" step="1" value="10"></label>
+<button onclick="findPoems()">Search</button>
+<div id="results"></div>
+
+<script>
+    const supabase = supabase.createClient('https://ooqqdjvvdeqsbijygsvh.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vcXFkanZ2ZGVxc2Jpanlnc3ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxNTgyNDMsImV4cCI6MjA1OTczNDI0M30.LPvegZEkpE8vypKwPFiljoFOHKSMBUiT33xep8G_tMQ');
+
+    async function findPoems() {
+        const lat = parseFloat(document.getElementById('lat').value);
+        const lon = parseFloat(document.getElementById('lon').value);
+        const radius = parseFloat(document.getElementById('radius').value);
+
+        const { data, error } = await supabase.rpc('get_poems_nearby', {
+            lat: lat,
+            lon: lon,
+            radius_km: radius
+        });
+
+        const results = document.getElementById('results');
+        results.innerHTML = '';
+
+        if (error) {
+            results.textContent = 'Error: ' + error.message;
+            return;
+        }
+
+        if (data.length === 0) {
+            results.textContent = 'No poems found nearby.';
+            return;
+        }
+
+        data.forEach(poem => {
+            const div = document.createElement('div');
+            div.className = 'poem';
+            div.innerHTML = `
+          <h3>${poem.title}</h3>
+          <p>${poem.body}</p>
+          <p><strong>Author:</strong> <a href="${poem.author_url}">${poem.author_title}</a></p>
+          <p><strong>URL:</strong> <a href="${poem.url}">${poem.url}</a></p>
+          <p><em>Distance: ${(poem.distance_m / 1000).toFixed(2)} km</em></p>
+        `;
+            results.appendChild(div);
+        });
+    }
+</script>
+</body>
+</html>
