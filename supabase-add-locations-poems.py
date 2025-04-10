@@ -44,6 +44,7 @@ def get_location_descriptions(title, text):
         f"Title: {title}\n"
         f"Text: {text}"
     )
+    print("Rendered prompt:\n", prompt)  # Debug: print the rendered prompt
 
     response = client.models.generate_content(
         model='gemini-2.0-flash',
