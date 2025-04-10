@@ -20,22 +20,26 @@ def get_location_descriptions(title, text):
     client = init_genai_client()
 
     prompt = (
-        "You are analyzing a poem to identify specific geographic locations. "
-        "Return a JSON array of strings, where each string is a location that is either explicitly mentioned, strongly implied, or clearly associated with the content of the poem. "
+        "You are analyzing a poem to identify specific geographic locations.\n"
+        "Return a JSON array of strings, where each string is a location that is either explicitly mentioned, strongly implied, or clearly associated with the content of the poem.\n"
         "You may use general world knowledge to infer settings from context, such as ecological or cultural clues (e.g., polar bears → Arctic).\n\n"
 
-        "The locations must be specific enough to geocode. For example:\n"
-        "- Valid: cities, states, regions, named rivers, mountains, parks, or landmarks.\n"
-        "- Not valid: country names or generic regions such as “the coast”, “the mountains”, “the tropics”, or “the countryside”.\n\n"
-
-        "If no valid location can be determined, return a JSON array containing a single string: 'N/A'.\n\n"
-
-        "Return **only** the JSON array—no explanation, comments, markdown, or additional text.\n\n"
+        "Rules:\n"
+        "* Output: Return only a JSON array of strings.\n"
+        "* Specificity: Each location must be precise enough to geocode (e.g., city, town, state, named rivers, lakes, mountains, parks, or landmarks).\n"
+        "* Invalid locations: Do not include generic geographic terms such as \"the coast\", \"the mountains\", or \"the countryside\".\n"
+        "* Country names:\n"
+        "    * Always include country names when part of a city/state/country or landmark/region/country combination (e.g., \"Portland, OR, US\", \"Rocky Mountains, US\", \"Mount Hood, Oregon, US\").\n"
+        "    * Include country names alone only if:\n"
+        "        * The country is relatively small and specific (e.g., \"Luxembourg\", \"Iceland\").\n"
+        "        * No more specific location within that country can be identified.\n"
+        "* If no valid locations are found, return exactly: [\"N/A\"].\n"
+        "* Do not include explanations, comments, markdown formatting, or additional text—only the JSON array.\n\n"
 
         "Example outputs:\n"
-        "['Portland, OR, US']\n"
-        "['Columbia River, US', 'Sahara Desert, Africa']\n"
-        "['N/A']\n\n"
+        "[\"Portland, OR, US\"]\n"
+        "[\"Columbia River, US\", \"Sahara Desert, Africa\"]\n"
+        "[\"N/A\"]\n\n"
 
         f"Title: {title}\n"
         f"Text: {text}"
