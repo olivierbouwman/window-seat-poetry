@@ -2,68 +2,172 @@
 <html>
 <head>
     <title>Poems Nearby</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <!-- Load Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <!-- Load Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 2rem; }
-        label, input { display: block; margin-bottom: 1rem; }
-        .poem { border-top: 1px solid #ccc; padding: 1rem 0; }
+        body { font-family: sans-serif; margin: 0; padding: 0; }
+        #map { width: 100%; height: 80vh; }
+        #controls {
+            padding: 1rem;
+            text-align: center;
+            background: #f8f8f8;
+        }
+        button {
+            margin: 0 0.5rem;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+        }
     </style>
 </head>
 <body>
-<h1>Find Poems Near You</h1>
-<label>Latitude: <input id="lat" type="number" step="any" value="45.52"></label>
-<label>Longitude: <input id="lon" type="number" step="any" value="-122.68"></label>
-<label>Radius (km): <input id="radius" type="number" step="1" value="10"></label>
-<button onclick="findPoems()">Search</button>
-<div id="results"></div>
+<h1 style="text-align: center;">Poems Nearby</h1>
+<div id="map"></div>
+<div id="controls">
+    <button id="playPause">Play</button>
+    <button id="next">Next</button>
+</div>
 
 <script>
-    let supabase;
+    window.addEventListener('load', function() {
+        // Initialize Supabase client using a different variable name
+        const supabaseUrl = 'https://ooqqdjvvdeqsbijygsvh.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vcXFkanZ2ZGVxc2Jpanlnc3ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxNTgyNDMsImV4cCI6MjA1OTczNDI0M30.LPvegZEkpE8vypKwPFiljoFOHKSMBUiT33xep8G_tMQ'; // Replace with your key
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
-    window.onload = () => {
-        supabase = window.supabase.createClient(
-            'https://ooqqdjvvdeqsbijygsvh.supabase.co',
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vcXFkanZ2ZGVxc2Jpanlnc3ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxNTgyNDMsImV4cCI6MjA1OTczNDI0M30.LPvegZEkpE8vypKwPFiljoFOHKSMBUiT33xep8G_tMQ'
-        );
-    };
+        // Global variables for the app
+        let map, userMarker, currentPoemMarker, audioPlayer;
+        let origin = null; // { lat, lon } where user clicked
+        let currentOffset = 0; // For fetching next poem
 
-    async function findPoems() {
-        const lat = parseFloat(document.getElementById('lat').value);
-        const lon = parseFloat(document.getElementById('lon').value);
-        const radius = parseFloat(document.getElementById('radius').value);
+        // Initialize the map using Leaflet with Stamen Toner tiles
+        function initMap() {
+            // Set a default view
+            map = L.map('map').setView([45.52, -122.68], 5);
 
-        const { data, error } = await supabase.rpc('get_poems_nearby', {
-            lat: lat,
-            lon: lon,
-            radius_km: radius
-        });
+            // Use Stadia Maps raster tiles (Alidade Smooth) per the tutorial
+            L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
+                maxZoom: 20,
+                attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
 
-        const results = document.getElementById('results');
-        results.innerHTML = '';
-
-        if (error) {
-            results.textContent = 'Error: ' + error.message;
-            return;
+            // Add click event listener
+            map.on('click', onMapClick);
         }
 
-        if (data.length === 0) {
-            results.textContent = 'No poems found nearby.';
-            return;
+        // On map click, set the origin and fetch the closest poem.
+        function onMapClick(e) {
+            // Clear previous markers if any
+            if (userMarker) { map.removeLayer(userMarker); }
+            if (currentPoemMarker) { map.removeLayer(currentPoemMarker); }
+
+            // Set new origin from click
+            origin = e.latlng;
+            currentOffset = 0; // reset offset for new origin
+
+            // Place a marker at the clicked location
+            userMarker = L.marker(origin).addTo(map)
+                .bindPopup("Search Center").openPopup();
+
+            // Fetch and play the closest poem
+            fetchAndPlayPoem();
         }
 
-        data.forEach(poem => {
-            const div = document.createElement('div');
-            div.className = 'poem';
-            div.innerHTML = `
-          <h3>${poem.title}</h3>
-          <p>${poem.body}</p>
-          <p><strong>Author:</strong> <a href="${poem.author_url}" target="_blank">${poem.author_title}</a></p>
-          <p><strong>URL:</strong> <a href="${poem.url}">${poem.url}</a></p>
-          <p><em>Distance: ${(poem.distance_m / 1000).toFixed(2)} km</em></p>
-        `;
-            results.appendChild(div);
-        });
-    }
+        // Fetch closest poem (with audio_url) via Supabase RPC.
+        async function fetchAndPlayPoem() {
+            if (!origin) return;
+
+            const { data, error } = await supabaseClient.rpc('get_poems_nearby', {
+                lat: origin.lat,
+                lon: origin.lng,
+                limit_param: 1,
+                offset_param: currentOffset
+            });
+
+            if (error) {
+                console.error("Supabase error:", error.message);
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                console.log("No poem found.");
+                return;
+            }
+
+            const poem = data[0];
+            console.log("Playing poem:", poem.title, poem.audio_url);
+
+            // Place a marker at poem's location if geom is available.
+            if (poem.geom) {
+                try {
+                    let geo;
+                    if (typeof poem.geom === 'string') {
+                        geo = JSON.parse(poem.geom);
+                    } else {
+                        geo = poem.geom;
+                    }
+                    // GeoJSON Point: { "type": "Point", "coordinates": [lon, lat] }
+                    const coords = geo.coordinates;
+                    currentPoemMarker = L.marker([coords[1], coords[0]]).addTo(map)
+                        .bindPopup(poem.title).openPopup();
+                } catch (ex) {
+                    console.error("Error parsing poem geom:", ex);
+                }
+            }
+
+            // Set up the audio player with the poem's audio_url.
+            if (!audioPlayer) {
+                audioPlayer = new Audio();
+            }
+            audioPlayer.src = poem.audio_url;
+            audioPlayer.play();
+
+            // Increment offset so that next call fetches the next poem further away.
+            currentOffset++;
+            // Update play/pause button state:
+            document.getElementById('playPause').textContent = "Pause";
+        }
+
+        // Toggle play/pause state.
+        function togglePlayPause() {
+            if (!audioPlayer) return;
+            if (audioPlayer.paused) {
+                audioPlayer.play();
+                document.getElementById('playPause').textContent = "Pause";
+            } else {
+                audioPlayer.pause();
+                document.getElementById('playPause').textContent = "Play";
+            }
+        }
+
+        // Fetch the next poem and play it.
+        function nextPoem() {
+            fetchAndPlayPoem();
+        }
+
+        // Attach event listeners for buttons
+        document.getElementById('playPause').addEventListener('click', togglePlayPause);
+        document.getElementById('next').addEventListener('click', nextPoem);
+
+        // Initialize map on window load
+        initMap();
+
+        (async function testReadAccess() {
+            // Replace 'supabaseClient' with your initialized Supabase client variable name.
+            const { data, error } = await supabaseClient
+                .from('poems')
+                .select('*')
+                .limit(5);
+
+            console.log("Data:", data);
+            console.log("Error:", error);
+        })();
+    });
 </script>
 </body>
 </html>
