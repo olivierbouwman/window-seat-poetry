@@ -20,7 +20,8 @@ def get_location_descriptions(title, text):
     client = init_genai_client()
 
     prompt = (
-        "You are analyzing information about a poet to identify geographic locations where the poet was born, lived, worked, or explicitly wrote about.\n\n"
+        "You are analyzing information about a poet to identify geographic locations where the poet was born, lived, worked, or explicitly wrote about.\n"
+        "You may also use general knowledge you have about the poet to infer relevant locations, even if those locations do not explicitly appear in the provided poet information.\n\n"
 
         "Rules:\n"
         "* Output: Return only a JSON array of strings.\n"
@@ -190,17 +191,17 @@ def main():
     conn = connect_db()
     cur = conn.cursor()
 
-    # Process one author only for debugging
-    author_record = fetch_next_author(cur)
-    if not author_record:
-        print("No more authors to process.")
-    else:
+    # Process all authors instead of one at a time.
+    while True:
+        author_record = fetch_next_author(cur)
+        if not author_record:
+            print("No more authors to process.")
+            break
+
         author_id, title, birth_year, death_year, bio_foundation, bio_gale, bio_poetry, bio_pol = author_record
         print(f"\nProcessing author id {author_id}: {title}")
         
-        # Build prompt_text only with fields having values
         prompt_lines = []
-        # Add header if any field exists
         if any([birth_year, death_year, bio_foundation, bio_gale, bio_poetry, bio_pol]):
             prompt_lines.append("Poet Information:")
         if birth_year is not None and str(birth_year).lower() != "none":
@@ -225,9 +226,9 @@ def main():
 
         if location_descriptions:
             print(f"Found locations for author {author_id}: {location_descriptions}")
-            # Debug: Skipping database update (testing mode)
-            print("DEBUG: Skipping database update, not saving any data to Supabase.")
-            print(f"Simulated update for author {author_id} with location associations.")
+            update_author_with_locations(cur, author_id, location_descriptions)
+            conn.commit()
+            print(f"Updated author {author_id} with location associations: {location_descriptions}")
         else:
             print(f"No location descriptions found for author {author_id}.")
 
@@ -237,3 +238,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
