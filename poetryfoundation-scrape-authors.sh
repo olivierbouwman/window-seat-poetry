@@ -3,7 +3,7 @@
 limit=1000
 baseUrl="https://www.poetryfoundation.org/proxy/graphql"
 authHeader="Authorization: Basic cGY6cGZwcml2YXRl"
-outputDir="poem_pages"
+outputDir="authors"
 mkdir -p "$outputDir"
 
 # Function to fetch a page given an offset value
@@ -13,18 +13,17 @@ fetch_page() {
     # Note: Within the heredoc, we escape quotes and newlines appropriately.
     json=$(cat <<EOF
 {
-  "operationName": "SearchEntries",
-  "query": "query SearchEntries(\$section: [String], \$limit: Int = 1000, \$offset: Int = 0, \$orderBy: String = \"postDate DESC\") {\n  entries(section: \$section, limit: \$limit, offset: \$offset, orderBy: \$orderBy) {\n    id\n    title\n    url\n    body\n    authors {\n      id\n      }\n    audioVersion {\n      audioFile {\n        url\n}}\n  }\n  count: entryCount(section: \$section)\n}",
+  "operationName": "SearchPoetEntries",
+  "query": "query SearchPoetEntries(\$limit: Int = 1000, \$offset: Int = 0, \$orderBy: String = \"postDate DESC\", \$relatedTo: [EntryCriteriaInput], \$search: String, \$birthYear: [QueryArgument]) {\n  entries(\n    section: \"authors\"\n    limit: \$limit\n    offset: \$offset\n    orderBy: \$orderBy\n    relatedToEntries: \$relatedTo\n    search: \$search\n    isPoet: true\n    birthYear: \$birthYear\n  ) {\n    ...EntryCommon\n    ... on authors_default_Entry {\n      birthYear\n      deathYear\n      foundationBio\n      galeBio\n      poetryBio\n      polBio\n      }\n    }\n  count: entryCount(\n    section: \"authors\"\n    relatedToEntries: \$relatedTo\n    search: \$search\n    isPoet: true\n    birthYear: \$birthYear\n  )\n}\n\nfragment EntryCommon on EntryInterface {\n  id\n\n  title\n  url\n  }",
   "variables": {
-    "section": [
-      "poems"
-    ],
     "limit": 1000,
-    "offset": 0,
-    "orderBy": "postDate DESC"
+    "offset": $offset,
+    "orderBy": "postDate DESC",
+    "relatedTo": null,
+    "search": null,
+    "birthYear": null
   }
 }
-
 EOF
 )
     # Perform the curl request and output the JSON result silently.
@@ -42,7 +41,7 @@ echo "$firstPage" > "$outputDir/page_0.json"
 
 # Extract the total count from the returned JSON (using jq)
 total=$(echo "$firstPage" | jq '.data.count')
-echo "Total poems found: $total"
+echo "Total authors found: $total"
 
 # Loop over pages (increment offset by $limit for each)
 offset=$limit
