@@ -4,12 +4,10 @@
     <title>Poems Nearby</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-    <!-- Load Leaflet JS -->
+    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
     <!-- Load Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
     <style>
         body { font-family: sans-serif; margin: 0; padding: 0; }
         #map { width: 100%; height: 80vh; }
@@ -23,6 +21,11 @@
             padding: 0.5rem 1rem;
             font-size: 1rem;
         }
+        /* Style for popup content to allow vertical scrolling */
+        .popup-content {
+            max-height: 200px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -35,53 +38,75 @@
 
 <script>
     window.addEventListener('load', function() {
-        // Initialize Supabase client using a different variable name
+        // Initialize Supabase client using the anon key
         const supabaseUrl = 'https://ooqqdjvvdeqsbijygsvh.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vcXFkanZ2ZGVxc2Jpanlnc3ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxNTgyNDMsImV4cCI6MjA1OTczNDI0M30.LPvegZEkpE8vypKwPFiljoFOHKSMBUiT33xep8G_tMQ'; // Replace with your key
         const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
+        // Define custom marker icons from the Leaflet Color Markers set
+        const userIcon = L.icon({
+            iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
+            shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        const currentIcon = L.icon({
+            iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+            shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        const pastIcon = L.icon({
+            iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+            shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
         // Global variables for the app
         let map, userMarker, currentPoemMarker, audioPlayer;
-        let origin = null; // { lat, lon } where user clicked
-        let currentOffset = 0; // For fetching next poem
+        let origin = null;   // The latlng where the user clicked
+        let currentOffset = 0; // For pagination (fetching next poems)
 
-        // Initialize the map using Leaflet with Stamen Toner tiles
+        // Initialize the map using Leaflet with Stadia Maps (Alidade Smooth) tiles
         function initMap() {
-            // Set a default view
             map = L.map('map').setView([45.52, -122.68], 5);
-
-            // Use Stadia Maps raster tiles (Alidade Smooth) per the tutorial
             L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
                 maxZoom: 20,
                 attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
 
-            // Add click event listener
             map.on('click', onMapClick);
         }
 
-        // On map click, set the origin and fetch the closest poem.
+        // Called when user clicks on the map: places a blue marker at the clicked point, resets offset, and fetches poem.
         function onMapClick(e) {
-            // Clear previous markers if any
             if (userMarker) { map.removeLayer(userMarker); }
-            if (currentPoemMarker) { map.removeLayer(currentPoemMarker); }
+            if (currentPoemMarker) {
+                // Mark the current poem marker as past
+                currentPoemMarker.setIcon(pastIcon);
+            }
 
-            // Set new origin from click
             origin = e.latlng;
-            currentOffset = 0; // reset offset for new origin
+            currentOffset = 0;
 
-            // Place a marker at the clicked location
-            userMarker = L.marker(origin).addTo(map)
+            userMarker = L.marker(origin, {icon: userIcon}).addTo(map)
                 .bindPopup("Search Center").openPopup();
 
-            // Fetch and play the closest poem
             fetchAndPlayPoem();
         }
 
-        // Fetch closest poem (with audio_url) via Supabase RPC.
+        // Fetch the closest poem (with audio_url) from Supabase.
         async function fetchAndPlayPoem() {
             if (!origin) return;
-
             const { data, error } = await supabaseClient.rpc('get_poems_nearby', {
                 lat: origin.lat,
                 lon: origin.lng,
@@ -93,7 +118,6 @@
                 console.error("Supabase error:", error.message);
                 return;
             }
-
             if (!data || data.length === 0) {
                 console.log("No poem found.");
                 return;
@@ -102,38 +126,104 @@
             const poem = data[0];
             console.log("Playing poem:", poem.title, poem.audio_url);
 
-            // Place a marker at poem's location if geom is available.
-            if (poem.geom) {
-                try {
-                    let geo;
-                    if (typeof poem.geom === 'string') {
-                        geo = JSON.parse(poem.geom);
-                    } else {
-                        geo = poem.geom;
-                    }
-                    // GeoJSON Point: { "type": "Point", "coordinates": [lon, lat] }
-                    const coords = geo.coordinates;
-                    currentPoemMarker = L.marker([coords[1], coords[0]]).addTo(map)
-                        .bindPopup(poem.title).openPopup();
-                } catch (ex) {
-                    console.error("Error parsing poem geom:", ex);
-                }
+            // If there's an existing current poem marker, mark it as past played (green)
+            if (currentPoemMarker) {
+                currentPoemMarker.setIcon(pastIcon);
             }
 
-            // Set up the audio player with the poem's audio_url.
+            // Place a marker for the currently playing poem using the custom red icon.
+            if (poem.geom && poem.geom.coordinates) {
+                const coords = poem.geom.coordinates; // GeoJSON: [lon, lat]
+                currentPoemMarker = L.marker([coords[1], coords[0]], {icon: currentIcon}).addTo(map);
+                // Store the poem data on the marker for later use
+                currentPoemMarker.poem = poem;
+
+                // Attach a click handler so that clicking a past marker will switch to that poem.
+                currentPoemMarker.on('click', function(e) {
+                    playPoemFromMarker(currentPoemMarker);
+                });
+            }
+
+            // Build the popup content with extended information.
+            const popupContent = await buildPopupContent(poem);
+            // Bind and open the popup on the current poem marker.
+            currentPoemMarker.bindPopup(popupContent, {maxWidth: 300}).openPopup();
+
+            // Set up the audio player with the poem's audio_url and start playing.
             if (!audioPlayer) {
                 audioPlayer = new Audio();
+                audioPlayer.controls = true; // Optional: show controls if desired
             }
             audioPlayer.src = poem.audio_url;
             audioPlayer.play();
 
-            // Increment offset so that next call fetches the next poem further away.
-            currentOffset++;
-            // Update play/pause button state:
+            document.getElementById('playPause').textContent = "Pause";
+            currentOffset++;  // Prepare for next poem fetching.
+        }
+
+        // Build popup HTML content for a poem record.
+        async function buildPopupContent(poem) {
+            // Get author info from Supabase
+            let authorHTML = "";
+            if (poem.author_id) {
+                const { data: authorData, error: authorError } = await supabaseClient
+                    .from('authors')
+                    .select('id, title, url, birth_year, death_year')
+                    .eq('id', poem.author_id)
+                    .single();
+                if (authorError) {
+                    console.error("Error fetching author:", authorError.message);
+                } else if (authorData) {
+                    let years = "";
+                    if (authorData.birth_year) {
+                        years += authorData.birth_year;
+                    }
+                    if (authorData.death_year) {
+                        years += " - " + authorData.death_year;
+                    }
+                    authorHTML = `<p>By <a href="${authorData.url}" target="_blank">${authorData.title}</a>${years ? " ("+years+")" : ""}</p>`;
+                }
+            }
+
+            // Construct a popup with vertical scrolling for longer text
+            const content = `
+        <div class="popup-content">
+          <h3><a href="${poem.url}" target="_blank">${poem.title}</a></h3>
+          ${authorHTML}
+          ${poem.location_description ? `<p>Location: ${poem.location_description}</p>` : ""}
+          <div>${poem.body}</div>
+        </div>
+      `;
+            return content;
+        }
+
+        // Function to play a poem when its marker is clicked (switching current marker)
+        async function playPoemFromMarker(marker) {
+            // If clicked marker is already current, do nothing.
+            if (!marker || marker.options.icon === currentIcon) return;
+
+            // Change current marker icon to pastIcon
+            if (currentPoemMarker) {
+                currentPoemMarker.setIcon(pastIcon);
+            }
+            // Set the clicked marker as current and update its icon to red
+            currentPoemMarker = marker;
+            currentPoemMarker.setIcon(currentIcon);
+
+            const poem = marker.poem;
+            if (!poem) return;
+
+            // Build popup content and open popup
+            const popupContent = await buildPopupContent(poem);
+            currentPoemMarker.bindPopup(popupContent, {maxWidth: 300}).openPopup();
+
+            // Update and play the audio source.
+            audioPlayer.src = poem.audio_url;
+            audioPlayer.play();
             document.getElementById('playPause').textContent = "Pause";
         }
 
-        // Toggle play/pause state.
+        // Toggle play/pause for the audio player.
         function togglePlayPause() {
             if (!audioPlayer) return;
             if (audioPlayer.paused) {
@@ -150,23 +240,12 @@
             fetchAndPlayPoem();
         }
 
-        // Attach event listeners for buttons
+        // Attach event listeners to the buttons.
         document.getElementById('playPause').addEventListener('click', togglePlayPause);
         document.getElementById('next').addEventListener('click', nextPoem);
 
-        // Initialize map on window load
+        // Initialize the map.
         initMap();
-
-        (async function testReadAccess() {
-            // Replace 'supabaseClient' with your initialized Supabase client variable name.
-            const { data, error } = await supabaseClient
-                .from('poems')
-                .select('*')
-                .limit(5);
-
-            console.log("Data:", data);
-            console.log("Error:", error);
-        })();
     });
 </script>
 </body>
