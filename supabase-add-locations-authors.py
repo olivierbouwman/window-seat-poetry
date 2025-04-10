@@ -20,19 +20,20 @@ def get_location_descriptions(title, text):
     client = init_genai_client()
 
     prompt = (
-        "You are analyzing information about a poet to identify specific geographic locations explicitly mentioned, strongly implied, or clearly associated with them."
+        "You are analyzing information about a poet to identify geographic locations where the poet was born, lived, worked, or explicitly wrote about.\n\n"
 
         "Rules:\n"
         "* Output: Return only a JSON array of strings.\n"
-        "* Specificity: Each location must be specific enough for precise geocoding (e.g., city, town, state, named rivers, lakes, mountains, parks, or landmarks).\n"
-        "* Invalid Locations: Do NOT include countries or generic geographic terms like “the coast,” “the mountains,” “the countryside,” etc.\n"
-        "* If no valid locations are found, return exactly: [\"N/A\"]\n"
-        "* Provide no explanation, comments, markdown formatting, or additional text—only the JSON array itself.\n\n"
+        "* Specificity: Each location must be precise enough to geocode (e.g., city, town, state, named rivers, lakes, mountains, parks, or landmarks).\n"
+        "* Relevant locations only: Do not include places merely mentioned in passing or unrelated to the poet’s personal history or creative work.\n"
+        "* Invalid locations: Do not include country names or generic geographic terms such as \"the coast\", \"the mountains\", or \"the countryside\".\n"
+        "* If no valid locations are found, return exactly: [\"N/A\"].\n"
+        "* Do not include explanations, comments, markdown formatting, or additional text—only the JSON array.\n\n"
 
         "Example outputs:\n"
-        "['Portland, OR, US']\n"
-        "['Columbia River, US', 'Sahara Desert, Africa']\n"
-        "['N/A']\n\n"
+        "[\"Portland, OR, US\"]\n"
+        "[\"Columbia River, US\", \"Sahara Desert, Africa\"]\n"
+        "[\"N/A\"]\n\n"
 
         "Poet Information to Analyze:\n"
         f"Poet Name: {title}\n"
